@@ -27,25 +27,38 @@ Le dataset complet contient des variables demographiques et contextuelles qui se
 pour realiser l'audit d'equite algorithmique (Disparate Impact), l'anonymisation RGPD et la mitigation des biais.
 """)
 
-# ==============================================================================
-# TODO (Apprenants) : Implémenter le formulaire Streamlit et l'appel API
-#
-# Étapes suggérées :
-# 1. Créer un formulaire avec st.form("form_credit").
-# 2. Ajouter les champs de saisie :
-#    - montant_demande (st.number_input, ex: 1000 à 50000 €)
-#    - duree_mois (st.slider, ex: 6 à 84 mois)
-#    - revenu_mensuel (st.number_input, ex: 500 à 20000 €)
-#    - bouton de soumission (st.form_submit_button)
-# 3. Lors de la soumission du formulaire :
-#    a. Émettre un POST vers f"{FASTAPI_URL}/predict/credit" avec le payload JSON :
-#       {"montant_demande": float, "duree_mois": int, "revenu_mensuel": float}
-#    b. Récupérer la réponse JSON (CreditPredictResponse) contenant :
-#       - score (float entre 300 et 850)
-#       - decision (str : 'Favorable', 'Ajourne / Examen Approfondi', 'Defavorable')
-#       - seuil_recommande (float)
-#       - model_version (str)
-#    c. Restituer visuellement le score (ex: st.metric, jauge de progression, couleur de badge).
-# ==============================================================================
+with st.form("form_credit"):
+    montant = st.number_input("Montant demande (EUR)", min_value=1000.0, max_value=500000.0, value=10000.0, step=500.0)
+    duree = st.slider("Duree du pret (mois)", min_value=6, max_value=84, value=24)
+    revenu = st.number_input("Revenu mensuel net (EUR)", min_value=500.0, max_value=100000.0, value=3000.0, step=100.0)
+    submitted = st.form_submit_button("Calculer le score")
 
-st.info("A vous de jouer ! Implementez le formulaire et l'affichage des predictions de credit.")
+if submitted:
+    try:
+        resp = requests.post(
+            f"{FASTAPI_URL}/predict/credit",
+            json={"montant_demande": montant, "duree_mois": duree, "revenu_mensuel": revenu},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        col1, col2 = st.columns(2)
+        col1.metric("Score de credit", f"{data['score']:.0f} / 850")
+        col2.metric("Decision", data["decision"])
+
+        # Score borne entre 300 et 850 : normalisation sur [0, 1] pour la barre
+        st.progress((data["score"] - 300) / 550)
+
+        if data["decision"] == "Favorable":
+            st.success(f"{data['decision']} : {data['motif']}")
+        elif data["decision"].startswith("Ajourne"):
+            st.warning(f"{data['decision']} : {data['motif']}")
+        else:
+            st.error(f"{data['decision']} : {data['motif']}")
+
+        st.caption(f"Modele : {data['type_modele']}")
+        with st.expander("Features utilisees"):
+            st.json(data["features_utilisees"])
+    except requests.RequestException as exc:
+        st.error(f"Impossible de joindre le backend : {exc}")
