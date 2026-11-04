@@ -1,7 +1,9 @@
-.git
-.venv
 __pycache__
 *.pyc
-docs/_build
-logs
+*.pyo
+*.pyd
+.venv
+.git
+.env
+logs/
 .pytest_cache

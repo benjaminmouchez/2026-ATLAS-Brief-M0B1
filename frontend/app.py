@@ -49,47 +49,46 @@ Bienvenue sur la plateforme unifiee **IA-TOS**. Cet agent conversationnel est or
 et connecte au LLM local **Qwen 2.5** via **Ollama**. Il possede un outil deterministe de calcul arithmetique (`calculer`).
 """)
 
-# Historique de la conversation conserve entre les reruns Streamlit
+# ==============================================================================
+# TODO (Apprenants) : Implémenter l'interface de chat conversationnelle
+# 
+# Étapes suggérées :
+# 1. Initialiser st.session_state["messages"] s'il n'existe pas encore.
+# 2. Afficher les messages existants de st.session_state["messages"] avec st.chat_message().
+# 3. Récupérer la saisie utilisateur avec st.chat_input().
+# 4. Lors de l'envoi :
+#    a. Ajouter le message utilisateur dans st.session_state["messages"] et l'afficher.
+#    b. Préparer l'historique et faire une requête HTTP POST vers f"{FASTAPI_URL}/chat"
+#       avec le payload : {"message": user_prompt, "history": history_payload}
+#    c. Récupérer la réponse JSON (ChatResponse) :
+#       - response (str) : texte de réponse
+#       - tool_called (bool) : indique si l'outil a été utilisé
+#       - tool_results (list) : traces des outils
+#    d. Afficher la réponse dans le chat assistant et ajouter au session_state.
+#    e. Si tool_called est True, afficher un expander montrant les calculs effectués.
+# ==============================================================================
+
 if "messages" not in st.session_state:
     st.session_state["messages"] = []
 
 for msg in st.session_state["messages"]:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
-        if msg.get("tool_results"):
-            with st.expander("Trace de l'outil de calcul"):
-                for trace in msg["tool_results"]:
-                    st.code(trace)
 
-user_prompt = st.chat_input("Posez une question ou demandez un calcul (ex : combien font 12 + 8 ?)")
+saisie_utilisateur = st.chat_input("saisie utilisateur")
 
-if user_prompt:
-    # L'historique envoye au backend exclut le message courant
-    history_payload = [
-        {"role": m["role"], "content": m["content"]} for m in st.session_state["messages"]
-    ]
-    st.session_state["messages"].append({"role": "user", "content": user_prompt})
-    with st.chat_message("user"):
-        st.write(user_prompt)
 
+if saisie_utilisateur:
+    history_payload = st.session_state["messages"].copy()    
+    st.session_state["messages"].append({"role": "user", "content": saisie_utilisateur})
+    st.write()
+    payload = {"message": saisie_utilisateur, "history": history_payload}
+    response = requests.post(f"{FASTAPI_URL}/chat", json=payload, timeout = 60)
+    data = response.json()
     with st.chat_message("assistant"):
-        try:
-            with st.spinner("L'agent reflechit..."):
-                resp = requests.post(
-                    f"{FASTAPI_URL}/chat",
-                    json={"message": user_prompt, "history": history_payload},
-                    timeout=120,
-                )
-            resp.raise_for_status()
-            data = resp.json()
-            st.write(data["response"])
-            tool_results = data["tool_results"] if data["tool_called"] else []
-            if tool_results:
-                with st.expander("Trace de l'outil de calcul"):
-                    for trace in tool_results:
-                        st.code(trace)
-            st.session_state["messages"].append(
-                {"role": "assistant", "content": data["response"], "tool_results": tool_results}
-            )
-        except requests.RequestException as exc:
-            st.error(f"Impossible de joindre le backend : {exc}")
+        st.write(data)
+        if data["tool_called"]:
+            with st.expander("Trace de l'outil de calcul"):
+                for trace in data["tool_results"]:
+                    st.write(trace)
+    st.session_state["messages"].append({"role": "assistant", "content": data["response"]})
